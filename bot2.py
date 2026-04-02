@@ -20,7 +20,7 @@ def load_json(file, default=[]):
     if os.path.exists(file):
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-    return default
+    return default if isinstance(default, list) else default
 
 def save_json(file, data):
     with open(file, "w", encoding="utf-8") as f:
@@ -34,9 +34,9 @@ welcome_message = load_json(WELCOME_FILE, """Make sure you take 30 seconds out o
 This way you’ll never lose us, and you’ll always have access to exclusive content 🔥""")
 
 # Admin state
-admin_states = {}  # chat_id -> current action
+admin_states = {}  # chat_id -> action
 
-# ================== FLASK ==================
+# ================== FLASK WEBHOOK ==================
 app = Flask(__name__)
 
 @app.route('/' + TOKEN, methods=['POST'])
@@ -46,20 +46,20 @@ def webhook():
     bot.process_new_updates([update])
     return 'OK', 200
 
-# Save every user who messages the bot
+# Save every user who interacts
 def save_user(chat_id):
     subscribers.add(chat_id)
     save_json(SUBSCRIBERS_FILE, list(subscribers))
 
-# ================== SEXY ADMIN PANEL ==================
+# ================== ADMIN PANEL ==================
 def admin_panel(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("📢 Text Broadcast", callback_data="admin_broadcast"),
-        types.InlineKeyboardButton("📸 News Post", callback_data="admin_news")
+        types.InlineKeyboardButton("📰 News Post", callback_data="admin_news")
     )
     markup.add(
-        types.InlineKeyboardButton("✏️ Edit Welcome Message", callback_data="admin_edit_welcome"),
+        types.InlineKeyboardButton("✏️ Edit Welcome", callback_data="admin_edit_welcome"),
         types.InlineKeyboardButton("👥 Vendors", callback_data="admin_vendors")
     )
     markup.add(
@@ -67,21 +67,20 @@ def admin_panel(chat_id):
         types.InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")
     )
     markup.add(
-        types.InlineKeyboardButton("📤 Export Subscribers", callback_data="admin_export"),
-        types.InlineKeyboardButton("🗑️ Clear All Subscribers", callback_data="admin_clear_confirm")
+        types.InlineKeyboardButton("📤 Export Users", callback_data="admin_export"),
+        types.InlineKeyboardButton("🧹 Cleanup Dead", callback_data="admin_cleanup")
     )
     markup.add(
-        types.InlineKeyboardButton("🧹 Cleanup Dead Users", callback_data="admin_cleanup"),
-        types.InlineKeyboardButton("🔄 Refresh Panel", callback_data="admin_refresh")
+        types.InlineKeyboardButton("🗑️ Clear All Users", callback_data="admin_clear_confirm"),
+        types.InlineKeyboardButton("🔄 Refresh", callback_data="admin_refresh")
     )
 
-    text = """🛠️ **ADMIN CONTROL PANEL**
-👑 Boss Mode Activated
+    text = """🛠️ **ADMIN CONTROL PANEL** 👑
 
-Full control at your fingertips:"""
+Choose any option below:"""
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
-# ================== USER START ==================
+# ================== WELCOME MESSAGE ==================
 @bot.message_handler(commands=['start'])
 def start(message):
     save_user(message.chat.id)
@@ -115,54 +114,53 @@ def callback_handler(call):
     elif data == "admin_broadcast":
         admin_states[chat_id] = "broadcast"
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "📢 Send the text broadcast message:")
+        bot.send_message(chat_id, "📢 Send your text broadcast:")
 
     elif data == "admin_news":
         admin_states[chat_id] = "news"
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "📰 Send your News Post (photo + caption or just text):")
+        bot.send_message(chat_id, "📰 Send News Post (photo + caption or text only):")
 
     elif data == "admin_edit_welcome":
         admin_states[chat_id] = "edit_welcome"
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"✏️ Current welcome message:\n\n{welcome_message}\n\nSend the new welcome message:")
+        bot.send_message(chat_id, f"✏️ Current welcome:\n\n{welcome_message}\n\nSend the new welcome message:")
 
-    elif data == "admin_vendors" or data == "admin_social" or data == "admin_stats":
-        # (Same sub-menus as before - kept for brevity)
+    elif data == "admin_vendors":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("➕ Add Vendor", callback_data="add_vendor"))
+        markup.add(types.InlineKeyboardButton("➖ Remove Vendor", callback_data="remove_vendor"))
+        markup.add(types.InlineKeyboardButton("📋 List Vendors", callback_data="list_vendors"))
+        markup.add(types.InlineKeyboardButton("⬅ Back", callback_data="admin_refresh"))
+        bot.edit_message_text("👥 **Vendor Management**", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+    elif data == "admin_social":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("➕ Add Social", callback_data="add_social"))
+        markup.add(types.InlineKeyboardButton("➖ Remove Social", callback_data="remove_social"))
+        markup.add(types.InlineKeyboardButton("📋 List Socials", callback_data="list_social"))
+        markup.add(types.InlineKeyboardButton("⬅ Back", callback_data="admin_refresh"))
+        bot.edit_message_text("🔗 **Social Media Manager**", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+    elif data == "admin_stats":
         bot.answer_callback_query(call.id)
-        if data == "admin_vendors":
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("➕ Add Vendor", callback_data="add_vendor"))
-            markup.add(types.InlineKeyboardButton("➖ Remove Vendor", callback_data="remove_vendor"))
-            markup.add(types.InlineKeyboardButton("📋 List Vendors", callback_data="list_vendors"))
-            markup.add(types.InlineKeyboardButton("⬅ Back", callback_data="admin_refresh"))
-            bot.edit_message_text("👥 **Vendor Management**", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        # ... (social and stats handlers are identical to previous version - full code has them)
+        text = f"""📊 **Statistics**
+
+Total Subscribers: `{len(subscribers)}`
+Vendors: `{len(vendors)}`
+Social Links: `{len(social_links)}`"""
+        bot.send_message(chat_id, text, parse_mode="Markdown")
 
     elif data == "admin_export":
         bot.answer_callback_query(call.id)
         if subscribers:
-            txt = "subscribers.txt"
-            with open(txt, "w") as f:
-                f.write("\n".join(map(str, subscribers)))
-            with open(txt, "rb") as f:
-                bot.send_document(chat_id, f, caption="📤 All subscriber IDs exported!")
-            os.remove(txt)
+            with open("subscribers.txt", "w") as f:
+                f.write("\n".join(str(uid) for uid in subscribers))
+            with open("subscribers.txt", "rb") as f:
+                bot.send_document(chat_id, f, caption="📤 All subscriber IDs")
+            os.remove("subscribers.txt")
         else:
             bot.send_message(chat_id, "No subscribers yet.")
-
-    elif data == "admin_clear_confirm":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ YES, CLEAR ALL", callback_data="admin_clear_yes"))
-        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="admin_refresh"))
-        bot.send_message(chat_id, "⚠️ Are you sure you want to delete ALL subscribers?", reply_markup=markup)
-
-    elif data == "admin_clear_yes":
-        subscribers.clear()
-        save_json(SUBSCRIBERS_FILE, [])
-        bot.answer_callback_query(call.id, "All subscribers cleared!", show_alert=True)
-        bot.send_message(chat_id, "🗑️ All subscribers have been cleared.")
 
     elif data == "admin_cleanup":
         bot.answer_callback_query(call.id)
@@ -174,11 +172,47 @@ def callback_handler(call):
                 subscribers.discard(uid)
                 removed += 1
         save_json(SUBSCRIBERS_FILE, list(subscribers))
-        bot.send_message(chat_id, f"🧹 Cleaned **{removed}** dead users!")
+        bot.send_message(chat_id, f"🧹 Removed **{removed}** dead users!")
 
-# ================== HANDLE ADMIN INPUTS ==================
+    elif data == "admin_clear_confirm":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✅ YES, CLEAR ALL", callback_data="admin_clear_yes"))
+        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="admin_refresh"))
+        bot.send_message(chat_id, "⚠️ Delete ALL subscribers permanently?", reply_markup=markup)
+
+    elif data == "admin_clear_yes":
+        subscribers.clear()
+        save_json(SUBSCRIBERS_FILE, [])
+        bot.answer_callback_query(call.id, "Cleared!", show_alert=True)
+        bot.send_message(chat_id, "🗑️ All subscribers cleared.")
+
+    # Sub actions
+    elif data.startswith("add_") or data.startswith("remove_") or data == "list_vendors" or data == "list_social":
+        if data == "add_vendor":
+            admin_states[chat_id] = "add_vendor"
+            bot.send_message(chat_id, "➕ Send vendor username (@username):")
+        elif data == "remove_vendor":
+            admin_states[chat_id] = "remove_vendor"
+            bot.send_message(chat_id, "➖ Send vendor username to remove:")
+        elif data == "list_vendors":
+            text = "📋 **Vendors**\n" + "\n".join(f"• {v}" for v in vendors) if vendors else "No vendors."
+            bot.send_message(chat_id, text)
+        elif data == "add_social":
+            admin_states[chat_id] = "add_social"
+            bot.send_message(chat_id, "➕ Send: Name https://link.com")
+        elif data == "remove_social":
+            admin_states[chat_id] = "remove_social"
+            bot.send_message(chat_id, "➖ Send exact social name to remove:")
+        elif data == "list_social":
+            if not social_links:
+                bot.send_message(chat_id, "No social links.")
+                return
+            text = "🔗 **Social Links**\n\n" + "\n".join(f"• **{name}**: {url}" for name, url in social_links.items())
+            bot.send_message(chat_id, text, disable_web_page_preview=True)
+
+# ================== HANDLE ADMIN TEXT INPUT ==================
 @bot.message_handler(func=lambda m: True)
-def handle_admin_input(message):
+def handle_input(message):
     if message.from_user.id != ADMIN_ID:
         save_user(message.chat.id)
         return
@@ -199,39 +233,74 @@ def handle_admin_input(message):
             except:
                 subscribers.discard(uid)
         save_json(SUBSCRIBERS_FILE, list(subscribers))
-        bot.reply_to(message, f"✅ Broadcast sent to **{sent}** users!")
+        bot.reply_to(message, f"✅ Sent to **{sent}** users!")
         admin_states.pop(chat_id, None)
 
-    # News Post (photo + caption supported)
+    # News Post
     elif state == "news":
         sent = 0
         for uid in list(subscribers):
             try:
                 if message.photo:
-                    bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption or message.text or "")
+                    bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption or "")
                 else:
                     bot.send_message(uid, message.text)
                 sent += 1
             except:
                 subscribers.discard(uid)
         save_json(SUBSCRIBERS_FILE, list(subscribers))
-        bot.reply_to(message, f"📰 News Post sent to **{sent}** users!")
+        bot.reply_to(message, f"📰 News sent to **{sent}** users!")
         admin_states.pop(chat_id, None)
 
-    # Edit Welcome Message
+    # Edit Welcome
     elif state == "edit_welcome":
         global welcome_message
         welcome_message = message.text
         save_json(WELCOME_FILE, welcome_message)
-        bot.reply_to(message, "✅ Welcome message updated successfully!")
+        bot.reply_to(message, "✅ Welcome message updated!")
         admin_states.pop(chat_id, None)
 
-    # Vendor & Social handlers (same as previous version)
-    # ... (add_vendor, remove_vendor, add_social, etc. - full logic is included in the complete code)
+    # Vendors
+    elif state == "add_vendor":
+        username = message.text.strip()
+        if username not in vendors:
+            vendors.append(username)
+            save_json(VENDORS_FILE, vendors)
+            bot.reply_to(message, f"✅ Added {username}")
+        admin_states.pop(chat_id, None)
+
+    elif state == "remove_vendor":
+        username = message.text.strip()
+        if username in vendors:
+            vendors.remove(username)
+            save_json(VENDORS_FILE, vendors)
+            bot.reply_to(message, f"✅ Removed {username}")
+        admin_states.pop(chat_id, None)
+
+    # Social
+    elif state == "add_social":
+        try:
+            parts = message.text.split(maxsplit=1)
+            name = parts[0]
+            url = parts[1]
+            social_links[name] = url
+            save_json(SOCIAL_FILE, social_links)
+            bot.reply_to(message, f"✅ Added {name}")
+        except:
+            bot.reply_to(message, "Format: Name https://link.com")
+        admin_states.pop(chat_id, None)
+
+    elif state == "remove_social":
+        name = message.text.strip()
+        if name in social_links:
+            del social_links[name]
+            save_json(SOCIAL_FILE, social_links)
+            bot.reply_to(message, f"✅ Removed {name}")
+        admin_states.pop(chat_id, None)
 
 # ================== START BOT ==================
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'your-app.onrender.com')}/{TOKEN}")
-    print("🤖 Bot running with FULLY ADVANCED Admin Panel + Custom Welcome + News + Export!")
+    print("🤖 Bot fully ready with advanced admin panel!")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
